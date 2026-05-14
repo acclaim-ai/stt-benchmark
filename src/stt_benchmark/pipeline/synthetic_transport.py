@@ -9,8 +9,6 @@ import time
 from pathlib import Path
 
 from loguru import logger
-from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import InputAudioRawFrame, StartFrame
 from pipecat.transports.base_input import BaseInputTransport
 from pipecat.transports.base_transport import TransportParams
@@ -23,11 +21,10 @@ class SyntheticInputTransport(BaseInputTransport):
     It reads pre-recorded audio and pushes it through the pipeline at real-time
     pace, simulating a real audio source as closely as possible.
 
-    Uses real Silero VAD for speech detection:
+    Plays audio for downstream processors:
     1. Streams all audio at real-time pace
-    2. Silero VAD detects actual speech start/end in the audio content
-    3. VADUserStartedSpeakingFrame/VADUserStoppedSpeakingFrame are emitted based on speech
-    4. After audio ends, sends silence until transcription received (or timeout)
+    2. After audio ends, sends silence until transcription received (or timeout)
+    3. Downstream VADProcessor handles speech start/end detection
     """
 
     def __init__(
@@ -35,7 +32,6 @@ class SyntheticInputTransport(BaseInputTransport):
         audio_data: bytes,
         sample_rate: int = 16000,
         chunk_ms: int = 20,
-        vad_stop_secs: float = 0.2,
         transcription_received: asyncio.Event | None = None,
         max_silence_timeout: float = 10.0,
         post_transcription_delay: float = 2.0,
@@ -46,7 +42,6 @@ class SyntheticInputTransport(BaseInputTransport):
             audio_data: Raw PCM audio bytes (16-bit, mono)
             sample_rate: Audio sample rate in Hz
             chunk_ms: Duration of each audio chunk in ms
-            vad_stop_secs: Silence duration for VAD to trigger stop (default 0.2s)
             transcription_received: Event set when transcription is received (optional).
                 If provided, silence is sent until this event is set or timeout.
                 If None, sends a fixed amount of silence for compatibility.
@@ -54,20 +49,15 @@ class SyntheticInputTransport(BaseInputTransport):
             post_transcription_delay: Time to continue sending silence after first
                 transcription to collect additional segments (default 2.0s)
         """
-        # Create Silero VAD with configurable stop threshold
-        vad_analyzer = SileroVADAnalyzer(params=VADParams(stop_secs=vad_stop_secs))
-
         params = TransportParams(
             audio_in_enabled=True,
             audio_in_sample_rate=sample_rate,
-            vad_analyzer=vad_analyzer,
         )
         super().__init__(params)
 
         self._audio_data = audio_data
         self._sample_rate = sample_rate
         self._chunk_ms = chunk_ms
-        self._vad_stop_secs = vad_stop_secs
         self._transcription_received = transcription_received
         self._max_silence_timeout = max_silence_timeout
         self._post_transcription_delay = post_transcription_delay
@@ -86,18 +76,12 @@ class SyntheticInputTransport(BaseInputTransport):
         # Event to signal when audio pumping is complete
         self._audio_complete = asyncio.Event()
 
-    @property
-    def vad_stop_secs(self) -> float:
-        """Return the VAD stop duration for timing calculations."""
-        return self._vad_stop_secs
-
     @classmethod
     def from_file(
         cls,
         audio_path: str | Path,
         sample_rate: int = 16000,
         chunk_ms: int = 20,
-        vad_stop_secs: float = 0.2,
         transcription_received: asyncio.Event | None = None,
         max_silence_timeout: float = 10.0,
         post_transcription_delay: float = 2.0,
@@ -108,7 +92,6 @@ class SyntheticInputTransport(BaseInputTransport):
             audio_path: Path to PCM audio file
             sample_rate: Audio sample rate in Hz
             chunk_ms: Duration of each audio chunk in ms
-            vad_stop_secs: Silence duration for VAD stop
             transcription_received: Event set when transcription is received
             max_silence_timeout: Maximum time to send silence in seconds
             post_transcription_delay: Time to continue sending silence after first
@@ -122,7 +105,6 @@ class SyntheticInputTransport(BaseInputTransport):
             audio_data=audio_data,
             sample_rate=sample_rate,
             chunk_ms=chunk_ms,
-            vad_stop_secs=vad_stop_secs,
             transcription_received=transcription_received,
             max_silence_timeout=max_silence_timeout,
             post_transcription_delay=post_transcription_delay,

@@ -77,8 +77,8 @@ uv run stt-benchmark run [OPTIONS]
 
 ```
 assemblyai, aws, azure, cartesia, deepgram, elevenlabs, fal,
-gladia, google, gradium, groq, nvidia, openai, sambanova,
-sarvam, soniox, speechmatics, whisper
+gladia, google, gradium, groq, nvidia, openai,
+sarvam, smallest, soniox, speechmatics, whisper
 ```
 
 ### Examples

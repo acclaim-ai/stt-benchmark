@@ -144,7 +144,7 @@ This gives accuracy metrics that reflect real-world impact on downstream LLM app
 
 ## Supported Services
 
-`assemblyai`, `aws`, `azure`, `cartesia`, `deepgram`, `deepgram_flux`, `elevenlabs`, `fal`, `gladia`, `google`, `gradium`, `groq`, `hathora`, `nvidia`, `openai`, `sambanova`, `sarvam`, `soniox`, `speechmatics`, `whisper`
+`assemblyai`, `aws`, `azure`, `cartesia`, `deepgram`, `deepgram_flux`, `elevenlabs`, `fal`, `gladia`, `google`, `gradium`, `groq`, `nvidia`, `openai`, `sarvam`, `smallest`, `soniox`, `speechmatics`, `whisper`
 
 See `env.example` for required API keys.
 
@@ -227,15 +227,18 @@ stt_benchmark_data/
 │  observers=[MetricsCollector, TranscriptionCollector]    │
 ├──────────────────────────────────────────────────────────┤
 │                                                          │
-│       ┌──────────────────┐    ┌───────────────┐          │
-│       │ SyntheticInput   │───▶│  STTService   │          │
-│       │ Transport        │    │               │          │
-│       │                  │    │ Emits:        │          │
-│       │ - Plays audio    │    │ - Transcript  │          │
-│       │ - Silero VAD     │    │ - MetricsFrame│          │
-│       │ - Real-time pace │    │   (TTFS)      │          │
-│       └──────────────────┘    └───────────────┘          │
-│                                     │                    │
+│       ┌──────────────────┐                               │
+│       │ SyntheticInput   │  Plays audio at real-time pace│
+│       │ Transport        │                               │
+│       └────────┬─────────┘                               │
+│                ▼                                         │
+│       ┌──────────────────┐                               │
+│       │ VADProcessor     │  Emits VAD frames via Silero  │
+│       └────────┬─────────┘                               │
+│                ▼                                         │
+│       ┌──────────────────┐                               │
+│       │ STTService       │  Emits transcript + metrics   │
+│       └──────────────────┘                               │
 │                           Observers capture frames       │
 └──────────────────────────────────────────────────────────┘
 ```

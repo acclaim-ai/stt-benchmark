@@ -232,15 +232,6 @@ def create_groq() -> FrameProcessor:
     )
 
 
-def create_hathora() -> FrameProcessor:
-    from pipecat.services.hathora.stt import HathoraSTTService
-
-    return HathoraSTTService(
-        api_key=_get_env("HATHORA_API_KEY"),
-        model="nvidia-parakeet-tdt-0.6b-v3",
-    )
-
-
 def create_nvidia() -> FrameProcessor:
     from pipecat.services.nvidia.stt import NvidiaSTTService
 
@@ -272,22 +263,24 @@ def create_openai_realtime() -> FrameProcessor:
     )
 
 
-def create_sambanova() -> FrameProcessor:
-    from pipecat.services.sambanova.stt import SambaNovaSTTService
-
-    return SambaNovaSTTService(
-        api_key=_get_env("SAMBANOVA_API_KEY"),
-        model="Whisper-Large-v3",
-        language=Language.EN,
-    )
-
-
 def create_sarvam() -> FrameProcessor:
     from pipecat.services.sarvam.stt import SarvamSTTService
 
     return SarvamSTTService(
         api_key=_get_env("SARVAM_API_KEY"),
         model="saarika:v2.5",
+    )
+
+
+def create_smallest() -> FrameProcessor:
+    from pipecat.services.smallest.stt import SmallestSTTService
+
+    return SmallestSTTService(
+        api_key=_get_env("SMALLEST_API_KEY"),
+        settings=SmallestSTTService.Settings(
+            language=Language.EN,
+            model="pulse",
+        ),
     )
 
 
@@ -384,10 +377,6 @@ STT_SERVICES: dict[str, ServiceDefinition] = {
         factory=create_groq,
         required_env_vars=["GROQ_API_KEY"],
     ),
-    "hathora": ServiceDefinition(
-        factory=create_hathora,
-        required_env_vars=["HATHORA_API_KEY"],
-    ),
     "nvidia": ServiceDefinition(
         factory=create_nvidia,
         required_env_vars=["NVIDIA_API_KEY"],
@@ -400,13 +389,13 @@ STT_SERVICES: dict[str, ServiceDefinition] = {
         factory=create_openai_realtime,
         required_env_vars=["OPENAI_API_KEY"],
     ),
-    "sambanova": ServiceDefinition(
-        factory=create_sambanova,
-        required_env_vars=["SAMBANOVA_API_KEY"],
-    ),
     "sarvam": ServiceDefinition(
         factory=create_sarvam,
         required_env_vars=["SARVAM_API_KEY"],
+    ),
+    "smallest": ServiceDefinition(
+        factory=create_smallest,
+        required_env_vars=["SMALLEST_API_KEY"],
     ),
     "soniox": ServiceDefinition(
         factory=create_soniox,
