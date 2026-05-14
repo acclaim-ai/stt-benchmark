@@ -6,13 +6,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
-
-if TYPE_CHECKING:
-    import aiohttp
-
+from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
+from pipecat.processors.audio.vad_processor import VADProcessor
+
+if TYPE_CHECKING:
+    import aiohttp
 
 from stt_benchmark.config import get_config
 from stt_benchmark.models import AudioSample, BenchmarkResult, ServiceName
@@ -163,14 +165,17 @@ class BenchmarkRunner:
             audio_data=audio_data,
             sample_rate=self.sample_rate,
             chunk_ms=self.chunk_ms,
-            vad_stop_secs=self.vad_stop_secs,
             transcription_received=transcription_observer._transcription_received,
             max_silence_timeout=self.max_silence_timeout_secs,
             post_transcription_delay=self.post_transcription_delay_secs,
         )
 
+        vad_processor = VADProcessor(
+            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=self.vad_stop_secs))
+        )
+
         # Build pipeline
-        pipeline = Pipeline([transport, stt_service])
+        pipeline = Pipeline([transport, vad_processor, stt_service])
 
         # Create task with observers
         task = PipelineTask(

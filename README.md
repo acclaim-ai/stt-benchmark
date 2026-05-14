@@ -227,15 +227,18 @@ stt_benchmark_data/
 │  observers=[MetricsCollector, TranscriptionCollector]    │
 ├──────────────────────────────────────────────────────────┤
 │                                                          │
-│       ┌──────────────────┐    ┌───────────────┐          │
-│       │ SyntheticInput   │───▶│  STTService   │          │
-│       │ Transport        │    │               │          │
-│       │                  │    │ Emits:        │          │
-│       │ - Plays audio    │    │ - Transcript  │          │
-│       │ - Silero VAD     │    │ - MetricsFrame│          │
-│       │ - Real-time pace │    │   (TTFS)      │          │
-│       └──────────────────┘    └───────────────┘          │
-│                                     │                    │
+│       ┌──────────────────┐                               │
+│       │ SyntheticInput   │  Plays audio at real-time pace│
+│       │ Transport        │                               │
+│       └────────┬─────────┘                               │
+│                ▼                                         │
+│       ┌──────────────────┐                               │
+│       │ VADProcessor     │  Emits VAD frames via Silero  │
+│       └────────┬─────────┘                               │
+│                ▼                                         │
+│       ┌──────────────────┐                               │
+│       │ STTService       │  Emits transcript + metrics   │
+│       └──────────────────┘                               │
 │                           Observers capture frames       │
 └──────────────────────────────────────────────────────────┘
 ```
