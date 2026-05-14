@@ -3,7 +3,7 @@ name = "stt-benchmark"
 version = "0.1.0"
 description = "STT (Speech-to-Text) TTFB benchmarking tool using Pipecat"
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
     { name = "Your Name", email = "you@example.com" }
@@ -21,7 +21,7 @@ classifiers = [
 
 dependencies = [
     # Pipecat with STT providers
-    "pipecat-ai[assemblyai,aws,azure,cartesia,deepgram,elevenlabs,fal,gladia,google,gradium,groq,hathora,nvidia,openai,sambanova,sarvam,smallest,soniox,speechmatics,whisper,silero,soundfile]>=0.0.108,<1.0",
+    "pipecat-ai[assemblyai,aws,azure,cartesia,deepgram,elevenlabs,fal,gladia,google,gradium,groq,nvidia,openai,sarvam,smallest,soniox,speechmatics,whisper,silero,soundfile]>=1,<2",
     # Dataset handling
     "datasets>=2.16.0,<3.0.0",
     "scipy>=1.11.0",
