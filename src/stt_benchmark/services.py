@@ -79,12 +79,11 @@ class ServiceDefinition:
 
 
 def create_assemblyai() -> FrameProcessor:
-    from pipecat.services.assemblyai.models import AssemblyAIConnectionParams
     from pipecat.services.assemblyai.stt import AssemblyAISTTService
 
     return AssemblyAISTTService(
         api_key=_get_env("ASSEMBLYAI_API_KEY"),
-        connection_params=AssemblyAIConnectionParams(
+        settings=AssemblyAISTTService.Settings(
             end_of_turn_confidence_threshold=1.0,
             max_turn_silence=2000,
         ),
@@ -116,17 +115,31 @@ def create_cartesia() -> FrameProcessor:
 
     return CartesiaSTTService(
         api_key=_get_env("CARTESIA_API_KEY"),
-        model="ink-whisper",
+        settings=CartesiaSTTService.Settings(
+            model="ink-whisper",
+            language=Language.EN,
+        ),
+    )
+
+
+def create_cartesia_ink2() -> FrameProcessor:
+    from pipecat.services.cartesia.stt import CartesiaSTTService
+
+    return CartesiaSTTService(
+        api_key=_get_env("CARTESIA_API_KEY"),
+        settings=CartesiaSTTService.Settings(
+            model="ink-2",
+            language=Language.EN,
+        ),
     )
 
 
 def create_deepgram() -> FrameProcessor:
-    from deepgram import LiveOptions
     from pipecat.services.deepgram.stt import DeepgramSTTService
 
     return DeepgramSTTService(
         api_key=_get_env("DEEPGRAM_API_KEY"),
-        live_options=LiveOptions(
+        settings=DeepgramSTTService.Settings(
             model="nova-3-general",
             smart_format=False,
             profanity_filter=False,
@@ -140,8 +153,8 @@ def create_elevenlabs() -> FrameProcessor:
 
     return ElevenLabsRealtimeSTTService(
         api_key=_get_env("ELEVENLABS_API_KEY"),
-        model="scribe_v2_realtime",
-        params=ElevenLabsRealtimeSTTService.InputParams(
+        settings=ElevenLabsRealtimeSTTService.Settings(
+            model="scribe_v2_realtime",
             language=Language.EN,
         ),
     )
@@ -153,8 +166,8 @@ def create_elevenlabs_http(aiohttp_session: "aiohttp.ClientSession") -> FramePro
     return ElevenLabsSTTService(
         aiohttp_session=aiohttp_session,
         api_key=_get_env("ELEVENLABS_API_KEY"),
-        model="scribe_v2",
-        params=ElevenLabsSTTService.InputParams(
+        settings=ElevenLabsSTTService.Settings(
+            model="scribe_v2",
             language=Language.EN,
         ),
     )
@@ -165,7 +178,7 @@ def create_fal() -> FrameProcessor:
 
     return FalSTTService(
         api_key=_get_env("FAL_KEY"),
-        params=FalSTTService.InputParams(
+        settings=FalSTTService.Settings(
             language=Language.EN,
         ),
     )
@@ -173,7 +186,6 @@ def create_fal() -> FrameProcessor:
 
 def create_gladia() -> FrameProcessor:
     from pipecat.services.gladia.config import (
-        GladiaInputParams,
         LanguageConfig,
         PreProcessingConfig,
     )
@@ -182,8 +194,8 @@ def create_gladia() -> FrameProcessor:
     return GladiaSTTService(
         api_key=_get_env("GLADIA_API_KEY"),
         region=os.getenv("GLADIA_REGION", "us-west"),
-        model="solaria-1",
-        params=GladiaInputParams(
+        settings=GladiaSTTService.Settings(
+            model="solaria-1",
             language_config=LanguageConfig(
                 languages=[Language.EN],
             ),
@@ -201,7 +213,7 @@ def create_google() -> FrameProcessor:
     return GoogleSTTService(
         credentials_path=_get_env("GOOGLE_APPLICATION_CREDENTIALS"),
         location=os.getenv("GOOGLE_LOCATION", "us-central1"),
-        params=GoogleSTTService.InputParams(
+        settings=GoogleSTTService.Settings(
             languages=Language.EN_US,
             model="latest_long",
         ),
@@ -213,10 +225,7 @@ def create_gradium() -> FrameProcessor:
 
     return GradiumSTTService(
         api_key=_get_env("GRADIUM_API_KEY"),
-        api_endpoint_base_url=os.getenv(
-            "GRADIUM_BASE_URL", "wss://us.api.gradium.ai/api/speech/asr"
-        ),
-        params=GradiumSTTService.InputParams(
+        settings=GradiumSTTService.Settings(
             language=Language.EN,
         ),
     )
@@ -227,8 +236,10 @@ def create_groq() -> FrameProcessor:
 
     return GroqSTTService(
         api_key=_get_env("GROQ_API_KEY"),
-        model="whisper-large-v3-turbo",
-        language=Language.EN,
+        settings=GroqSTTService.Settings(
+            model="whisper-large-v3-turbo",
+            language=Language.EN,
+        ),
     )
 
 
@@ -237,8 +248,10 @@ def create_mistral() -> FrameProcessor:
 
     return MistralSTTService(
         api_key=_get_env("MISTRAL_API_KEY"),
-        model="voxtral-mini-transcribe-realtime-2602",
-        language=Language.EN,
+        settings=MistralSTTService.Settings(
+            model="voxtral-mini-transcribe-realtime-2602",
+            language=Language.EN,
+        ),
     )
 
 
@@ -247,7 +260,7 @@ def create_nvidia() -> FrameProcessor:
 
     return NvidiaSTTService(
         api_key=_get_env("NVIDIA_API_KEY"),
-        params=NvidiaSTTService.InputParams(
+        settings=NvidiaSTTService.Settings(
             language=Language.EN_US,
         ),
     )
@@ -275,8 +288,10 @@ def create_openai() -> FrameProcessor:
 
     return OpenAISTTService(
         api_key=_get_env("OPENAI_API_KEY"),
-        model="gpt-4o-mini-transcribe",
-        language=Language.EN,
+        settings=OpenAISTTService.Settings(
+            model="gpt-4o-mini-transcribe",
+            language=Language.EN,
+        ),
     )
 
 
@@ -285,8 +300,10 @@ def create_openai_realtime() -> FrameProcessor:
 
     return OpenAIRealtimeSTTService(
         api_key=_get_env("OPENAI_API_KEY"),
-        model="gpt-4o-transcribe",
-        language=Language.EN,
+        settings=OpenAIRealtimeSTTService.Settings(
+            model="gpt-4o-transcribe",
+            language=Language.EN,
+        ),
     )
 
 
@@ -295,7 +312,9 @@ def create_sarvam() -> FrameProcessor:
 
     return SarvamSTTService(
         api_key=_get_env("SARVAM_API_KEY"),
-        model="saarika:v2.5",
+        settings=SarvamSTTService.Settings(
+            model="saarika:v2.5",
+        ),
     )
 
 
@@ -312,11 +331,11 @@ def create_smallest() -> FrameProcessor:
 
 
 def create_soniox() -> FrameProcessor:
-    from pipecat.services.soniox.stt import SonioxInputParams, SonioxSTTService
+    from pipecat.services.soniox.stt import SonioxSTTService
 
     return SonioxSTTService(
         api_key=_get_env("SONIOX_API_KEY"),
-        params=SonioxInputParams(
+        settings=SonioxSTTService.Settings(
             model="stt-rt-v4",
             language_hints=[Language.EN],
             language_hints_strict=True,
@@ -331,7 +350,7 @@ def create_speechmatics() -> FrameProcessor:
     return SpeechmaticsSTTService(
         api_key=_get_env("SPEECHMATICS_API_KEY"),
         base_url=os.getenv("SPEECHMATICS_RT_URL", "wss://us.rt.speechmatics.com/v2"),
-        params=SpeechmaticsSTTService.InputParams(
+        settings=SpeechmaticsSTTService.Settings(
             language=Language.EN,
             turn_detection_mode=TurnDetectionMode.EXTERNAL,
         ),
@@ -342,8 +361,10 @@ def create_whisper() -> FrameProcessor:
     from pipecat.services.whisper.stt import Model, WhisperSTTService
 
     return WhisperSTTService(
-        model=Model.DISTIL_MEDIUM_EN,
-        language=Language.EN,
+        settings=WhisperSTTService.Settings(
+            model=Model.DISTIL_MEDIUM_EN,
+            language=Language.EN,
+        ),
     )
 
 
@@ -352,7 +373,9 @@ def create_xai() -> FrameProcessor:
 
     return XAISTTService(
         api_key=_get_env("XAI_API_KEY"),
-        language=Language.EN,
+        settings=XAISTTService.Settings(
+            language=Language.EN,
+        ),
     )
 
 
@@ -378,6 +401,10 @@ STT_SERVICES: dict[str, ServiceDefinition] = {
     ),
     "cartesia": ServiceDefinition(
         factory=create_cartesia,
+        required_env_vars=["CARTESIA_API_KEY"],
+    ),
+    "cartesia_ink2": ServiceDefinition(
+        factory=create_cartesia_ink2,
         required_env_vars=["CARTESIA_API_KEY"],
     ),
     "deepgram": ServiceDefinition(

@@ -18,6 +18,7 @@ class ServiceName(str, Enum):
     AWS = "aws"
     AZURE = "azure"
     CARTESIA = "cartesia"
+    CARTESIA_INK2 = "cartesia_ink2"
     DEEPGRAM = "deepgram"
     # DEEPGRAM_FLUX = "deepgram_flux"
     ELEVENLABS = "elevenlabs"
