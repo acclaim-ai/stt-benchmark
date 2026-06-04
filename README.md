@@ -150,7 +150,7 @@ This gives accuracy metrics that reflect real-world impact on downstream LLM app
 
 ## Supported Services
 
-`assemblyai`, `assemblyai_u3_rt_pro`, `aws`, `azure`, `cartesia`, `cartesia_ink2`, `deepgram`, `elevenlabs`, `elevenlabs_http`, `fal`, `gladia`, `google`, `gradium`, `groq`, `mistral`, `nvidia`, `nvidia_sagemaker`, `openai`, `openai_realtime`, `sarvam`, `smallest`, `soniox`, `speechmatics`, `whisper`, `xai`
+`assemblyai`, `assemblyai_u3_rt_pro`, `aws`, `azure`, `cartesia`, `cartesia_ink2`, `deepgram`, `elevenlabs`, `elevenlabs_http`, `fal`, `gladia`, `google`, `gradium`, `groq`, `mistral`, `nvidia`, `nvidia_sagemaker`, `openai`, `openai_realtime`, `sarvam`, `sarvam_saaras_v3`, `smallest`, `soniox`, `speechmatics`, `whisper`, `xai`
 
 Each key is one (vendor, model) pair — a vendor with multiple models has multiple keys (e.g. `cartesia` / `cartesia_ink2`, `assemblyai` / `assemblyai_u3_rt_pro`). To add a model, see [docs/adding-models.md](docs/adding-models.md). See `env.example` for required API keys.
 

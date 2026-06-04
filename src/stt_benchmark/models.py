@@ -35,6 +35,7 @@ class ServiceName(str, Enum):
     OPENAI = "openai"
     OPENAI_REALTIME = "openai_realtime"
     SARVAM = "sarvam"
+    SARVAM_SAARAS_V3 = "sarvam_saaras_v3"
     SMALLEST = "smallest"
     SPEECHMATICS = "speechmatics"
     SONIOX = "soniox"
