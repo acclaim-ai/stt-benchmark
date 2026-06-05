@@ -7,6 +7,7 @@ from stt_benchmark.cli.download import app as download_app
 from stt_benchmark.cli.export import app as export_app
 from stt_benchmark.cli.ground_truth import app as ground_truth_app
 from stt_benchmark.cli.report import app as report_app
+from stt_benchmark.cli.update_readme import app as update_readme_app
 from stt_benchmark.cli.wer import app as wer_app
 
 app = typer.Typer(
@@ -22,6 +23,11 @@ app.add_typer(ground_truth_app, name="ground-truth", help="Generate ground truth
 app.add_typer(wer_app, name="wer", help="Calculate semantic WER metrics")
 app.add_typer(report_app, name="report", help="Generate reports and compare services")
 app.add_typer(export_app, name="export", help="Export data for a specific service")
+app.add_typer(
+    update_readme_app,
+    name="update-readme",
+    help="Add/update a service's row in the README results table",
+)
 
 
 @app.callback()

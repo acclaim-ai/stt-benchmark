@@ -1,21 +1,4 @@
 {
-  "services": [
-    "assemblyai",
-    "assemblyai_u3_rt_pro",
-    "aws",
-    "azure",
-    "cartesia",
-    "cartesia_ink2",
-    "deepgram",
-    "elevenlabs",
-    "google",
-    "gradium",
-    "mistral",
-    "openai_realtime",
-    "smallest",
-    "soniox",
-    "speechmatics"
-  ],
   "latency": ["median", "p95"],
   "output": "assets/"
 }

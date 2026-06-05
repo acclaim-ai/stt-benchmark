@@ -2,13 +2,14 @@
 """Generate a Pareto frontier plot of TTFS vs Semantic WER for STT services."""
 
 import argparse
-import asyncio
 import json
 import sys
 from pathlib import Path
 
 # Add parent to path for imports when running as script
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from stt_benchmark.reporting.readme_table import METRIC_KEYS, parse_table_rows  # noqa: E402
 
 LATENCY_METRICS = {
     "median": {"key": "ttfb_median", "label": "TTFS Median", "suffix": ""},
@@ -17,49 +18,11 @@ LATENCY_METRICS = {
 }
 
 
-def get_data_from_db():
-    """Fetch service metrics from the database."""
-    from stt_benchmark.storage.database import Database
-
-    async def fetch():
-        db = Database()
-        await db.initialize()
-
-        services = await db.get_services_with_results()
-        data = {}
-
-        for service_name, model_name in services:
-            transcript_stats = await db.get_service_transcript_stats(service_name, model_name)
-            wer_summary = await db.get_service_summary(service_name, model_name)
-
-            if transcript_stats and wer_summary:
-                sample_count = wer_summary["sample_count"]
-                perfect_pct = (
-                    wer_summary["perfect_count"] / sample_count * 100 if sample_count else 0.0
-                )
-                data[service_name.value] = {
-                    "ttfb_median": transcript_stats["ttfb_median"] * 1000,  # Convert to ms
-                    "ttfb_p95": transcript_stats["ttfb_p95"] * 1000,
-                    "ttfb_p99": transcript_stats["ttfb_p99"] * 1000,
-                    "pooled_wer": wer_summary["pooled_wer"] * 100,  # Convert to %
-                    # Extra fields used by the README table (not the plot):
-                    "success_rate": transcript_stats["success_rate"] * 100,
-                    "perfect_pct": perfect_pct,
-                    "wer_mean": wer_summary["wer_mean"] * 100,
-                }
-
-        await db.close()
-        return data
-
-    return asyncio.run(fetch())
-
-
 def plot_pareto_frontier(
     data: dict,
     latency_metric: str = "median",
     output_path: str = "stt_pareto_frontier.png",
     show: bool = False,
-    capitalize_labels: bool = True,
 ):
     """Generate the TTFS vs WER scatter plot with Pareto frontier annotation."""
     try:
@@ -219,8 +182,8 @@ def plot_pareto_frontier(
         # List Pareto optimal services with stats
         service_strs = []
         for name, ttfb, wer in pareto_optimal:
-            label = name.capitalize() if capitalize_labels else name
-            service_strs.append(f"{label}: {ttfb:.0f}ms, WER {wer:.2f}%")
+            # README labels are already display-ready; use them verbatim.
+            service_strs.append(f"{name}: {ttfb:.0f}ms, WER {wer:.2f}%")
 
         # Display services in a wrapped format
         services_text = "    ".join(service_strs)
@@ -306,78 +269,15 @@ def filter_services(data: dict, service_names: list[str]) -> dict:
     return filtered
 
 
-def generate_markdown_table(data: dict) -> str:
-    """Build the README "Results Summary" table from registry + DB metrics.
-
-    ``data`` is keyed by service key (i.e. before display-name remapping). The
-    Vendor and Model columns come from the registry (``vendor`` / ``model_label``)
-    so they never drift from the services config; metrics come from the database.
-    Rows are grouped by vendor, current model first. Only services with complete
-    metrics appear (a configured-but-not-yet-benchmarked model is skipped).
-    """
-    from stt_benchmark.services import STT_SERVICES
-
-    rows = []
-    for key, metrics in data.items():
-        definition = STT_SERVICES.get(key)
-        if definition is None:
-            continue
-        rows.append((definition, metrics))
-
-    # Group by vendor, current model first, then by model label.
-    rows.sort(key=lambda r: (r[0].vendor.lower(), not r[0].is_current, r[0].model_label.lower()))
-
-    lines = [
-        "| Vendor | Model | Transcripts | Perfect | WER Mean | Pooled WER "
-        "| TTFS Median | TTFS P95 | TTFS P99 |",
-        "|--------|-------|-------------|---------|----------|------------"
-        "|-------------|----------|----------|",
-    ]
-    for definition, m in rows:
-        lines.append(
-            f"| {definition.vendor} | {definition.model_label} "
-            f"| {m['success_rate']:.1f}% | {m['perfect_pct']:.1f}% "
-            f"| {m['wer_mean']:.2f}% | {m['pooled_wer']:.2f}% "
-            f"| {m['ttfb_median']:.0f}ms | {m['ttfb_p95']:.0f}ms | {m['ttfb_p99']:.0f}ms |"
-        )
-    return "\n".join(lines)
-
-
-README_TABLE_START = "<!-- RESULTS_TABLE:START -->"
-README_TABLE_END = "<!-- RESULTS_TABLE:END -->"
-
-
-def update_readme_table(table_md: str, readme_path: Path) -> bool:
-    """Replace the results table in README.md between the marker comments.
-
-    Returns True if the README was updated, False if the markers were not found
-    (in which case the caller should fall back to writing a standalone file).
-    """
-    if not readme_path.exists():
-        return False
-    content = readme_path.read_text()
-    if README_TABLE_START not in content or README_TABLE_END not in content:
-        return False
-
-    before, _, rest = content.partition(README_TABLE_START)
-    _, _, after = rest.partition(README_TABLE_END)
-    new_content = f"{before}{README_TABLE_START}\n{table_md}\n{README_TABLE_END}{after}"
-    readme_path.write_text(new_content)
-    return True
-
-
 def get_data_from_readme(readme_path: Path) -> dict:
-    """Parse the "Results Summary" table from README.md as the data source.
+    """Build plot data from the README "Results Summary" table.
 
-    Used when the canonical multi-vendor metrics live only in the committed
-    README table (we don't have raw benchmark runs for every vendor locally).
-    The table between the RESULTS_TABLE markers is treated as the single source
-    of truth, so the regenerated Pareto charts always match the published
-    numbers. Returns the same dict shape as ``get_data_from_db`` (keyed by a
-    display label, values in ms / %).
+    The table between the RESULTS_TABLE markers is the single source of truth, so
+    the rendered Pareto charts always match the published numbers. Returns a dict
+    keyed by a display label, with values in ms / %.
 
     Point labels are the vendor name when a vendor has a single row, or
-    ``"{vendor} {model}"`` when a vendor ships multiple models (so they don't
+    ``"{vendor} {model}"`` when a vendor ships multiple rows (so they don't
     collide on the chart).
     """
     from collections import Counter
@@ -386,64 +286,16 @@ def get_data_from_readme(readme_path: Path) -> dict:
         print(f"README not found: {readme_path}")
         sys.exit(1)
 
-    content = readme_path.read_text()
-    if README_TABLE_START in content and README_TABLE_END in content:
-        _, _, rest = content.partition(README_TABLE_START)
-        table_block, _, _ = rest.partition(README_TABLE_END)
-    else:
-        # Fall back to scanning the whole file for pipe-delimited rows.
-        table_block = content
-
-    def _num(cell: str) -> float:
-        return float(cell.replace("%", "").replace("ms", "").strip())
-
-    rows = []
-    for line in table_block.splitlines():
-        line = line.strip()
-        if not line.startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if len(cells) < 9:
-            continue
-        vendor, model = cells[0], cells[1]
-        # Skip the header row and the |---|---| separator row.
-        if vendor.lower() == "vendor" or set(vendor) <= set("-: "):
-            continue
-        try:
-            rows.append(
-                {
-                    "vendor": vendor,
-                    "model": model,
-                    "success_rate": _num(cells[2]),
-                    "perfect_pct": _num(cells[3]),
-                    "wer_mean": _num(cells[4]),
-                    "pooled_wer": _num(cells[5]),
-                    "ttfb_median": _num(cells[6]),
-                    "ttfb_p95": _num(cells[7]),
-                    "ttfb_p99": _num(cells[8]),
-                }
-            )
-        except ValueError:
-            # A row whose metric cells aren't numeric isn't a data row; skip it.
-            continue
+    rows = parse_table_rows(readme_path.read_text())
 
     vendor_counts = Counter(r["vendor"] for r in rows)
-    metric_keys = (
-        "ttfb_median",
-        "ttfb_p95",
-        "ttfb_p99",
-        "pooled_wer",
-        "success_rate",
-        "perfect_pct",
-        "wer_mean",
-    )
     data = {}
     for r in rows:
         if vendor_counts[r["vendor"]] > 1 and r["model"] and r["model"].upper() != "N/A":
             label = f"{r['vendor']} {r['model']}"
         else:
             label = r["vendor"]
-        data[label] = {k: r[k] for k in metric_keys}
+        data[label] = {k: r[k] for k in METRIC_KEYS}
     return data
 
 
@@ -479,14 +331,12 @@ def main():
         help="Path to a JSON config file with plot settings",
     )
     parser.add_argument(
-        "--from-readme",
-        nargs="?",
-        const="README.md",
-        default=None,
+        "--readme",
+        default="README.md",
         metavar="README_PATH",
-        help="Use the README results table as the data source instead of the database "
-        "(default path: README.md, resolved relative to the repo root). Skips DB access "
-        "and README table regeneration — the README is treated as the source of truth.",
+        help="Path to the README whose results table is the data source "
+        "(default: README.md, resolved relative to the repo root). The README is "
+        "the single source of truth; this script never writes to it.",
     )
     parser.add_argument(
         "--show",
@@ -509,71 +359,30 @@ def main():
     display_names = file_config.get("display_names", {})
     show = args.show if args.show is not None else file_config.get("show", False)
 
-    # README-derived labels are already display-ready; DB keys are lowercase
-    # service names that the bottom panel capitalizes.
-    capitalize_labels = args.from_readme is None
+    # The README results table is the single source of truth for the published
+    # numbers; plots are always rendered from it (never from the DB), so this
+    # script never modifies the README. To add/update a row, use
+    # `stt-benchmark update-readme`.
+    readme_path = Path(args.readme)
+    if not readme_path.is_absolute() and not readme_path.exists():
+        readme_path = Path(__file__).parent.parent / args.readme
+    print(f"Reading metrics from README table: {readme_path}")
+    data = get_data_from_readme(readme_path)
 
-    if args.from_readme is not None:
-        # README is the source of truth: read the published table as-is and do
-        # NOT regenerate it or remap labels from the registry.
-        readme_path = Path(args.from_readme)
-        if not readme_path.is_absolute() and not readme_path.exists():
-            readme_path = Path(__file__).parent.parent / args.from_readme
-        print(f"Reading metrics from README table: {readme_path}")
-        data = get_data_from_readme(readme_path)
+    if not data:
+        print("No data rows parsed from the README table. Nothing to plot.")
+        sys.exit(1)
 
+    # Filter to requested services (case-insensitive match on the label)
+    if services:
+        data = filter_services(data, services)
         if not data:
-            print("No data rows parsed from the README table. Nothing to plot.")
+            print("No matching services found. Nothing to plot.")
             sys.exit(1)
 
-        # Filter to requested services (case-insensitive match on the label)
-        if services:
-            data = filter_services(data, services)
-            if not data:
-                print("No matching services found. Nothing to plot.")
-                sys.exit(1)
-    else:
-        print("Fetching data from database...")
-        data = get_data_from_db()
-
-        if not data:
-            print("No data found. Run benchmarks and WER calculation first.")
-            sys.exit(1)
-
-        # Filter to requested services
-        if services:
-            data = filter_services(data, services)
-            if not data:
-                print("No matching services found. Nothing to plot.")
-                sys.exit(1)
-
-        # Generate the README results table from the same (plot-config) services,
-        # using registry labels + DB metrics. Do this before display-name remapping
-        # so we still have service keys to look up vendor/model_label.
-        table_md = generate_markdown_table(data)
-        readme_path = Path(__file__).parent.parent / "README.md"
-        if update_readme_table(table_md, readme_path):
-            print(f"\nUpdated results table in: {readme_path}\n")
-        else:
-            out = Path(output)
-            table_dir = out if (out.is_dir() or output.endswith("/")) else out.parent
-            table_dir.mkdir(parents=True, exist_ok=True)
-            table_file = table_dir / "results-table.md"
-            table_file.write_text(table_md + "\n")
-            print(
-                f"\nREADME markers not found; wrote table to: {table_file}\n"
-                f"(add {README_TABLE_START} / {README_TABLE_END} around the table in "
-                f"README.md to auto-update it)\n"
-            )
-        print(table_md)
-        print()
-
-        # Derive labels from registry metadata (vendor / model_label). Any
-        # display_names in the config are optional per-service overrides.
-        from stt_benchmark.services import get_display_names
-
-        labels = {**get_display_names(list(data.keys())), **display_names}
-        data = apply_display_names(data, labels)
+    # Optional per-label display-name overrides from the config file.
+    if display_names:
+        data = apply_display_names(data, display_names)
 
     print(f"Found {len(data)} services with complete metrics")
     for name, metrics in sorted(data.items()):
@@ -608,7 +417,7 @@ def main():
             suffix = LATENCY_METRICS[metric]["suffix"]
             plot_output = output_path / f"{default_basename}{suffix}.png"
             print(f"\nGenerating {LATENCY_METRICS[metric]['label']} plot...")
-            plot_pareto_frontier(data, metric, str(plot_output), show, capitalize_labels)
+            plot_pareto_frontier(data, metric, str(plot_output), show)
     else:
         for metric in metrics_to_plot:
             suffix = LATENCY_METRICS[metric]["suffix"]
@@ -617,7 +426,7 @@ def main():
             else:
                 plot_output = output_path
             print(f"\nGenerating {LATENCY_METRICS[metric]['label']} plot...")
-            plot_pareto_frontier(data, metric, str(plot_output), show, capitalize_labels)
+            plot_pareto_frontier(data, metric, str(plot_output), show)
 
 
 if __name__ == "__main__":

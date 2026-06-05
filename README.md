@@ -58,6 +58,32 @@ For production voice agents, **P95 latency matters more than median**. Even occa
 
 > **TTFS (Time To Final Segment)** is measured from when the user stops speaking to when the final transcription segment is received. For streaming voice agents, lower TTFS means faster response times.
 
+## Contributing a Result
+
+The Results Summary table above is the **single source of truth** for the
+published numbers and the Pareto charts. Multiple people contribute, so results
+are added one row at a time rather than by rebuilding the whole table. To add
+your model's result:
+
+1. Benchmark and score it locally:
+   ```bash
+   uv run stt-benchmark run --services <key>
+   uv run stt-benchmark wer --services <key>
+   ```
+2. Upsert just your row into the table — this reads only your service's metrics
+   from your local database and leaves every other vendor's row untouched:
+   ```bash
+   uv run stt-benchmark update-readme --services <key>
+   ```
+3. Regenerate the charts from the table (read-only with respect to the README),
+   then commit `README.md` and `assets/*.png`:
+   ```bash
+   uv run python scripts/pareto-frontier-plot.py
+   ```
+
+A brand-new vendor or model also needs a registry entry first — see
+**[Adding Models](docs/adding-models.md)** for the full checklist.
+
 ## Measure TTFS for Your Service
 
 If you're using Pipecat and want TTFS latency numbers for your STT service and configuration, see **[Measuring TTFS](docs/measuring-ttfs.md)** for a quick start guide. The P95/P99 values from this tool can be used directly in Pipecat's `ttfs_p99_latency` service configuration (Pipecat 0.0.102+).

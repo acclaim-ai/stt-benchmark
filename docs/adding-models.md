@@ -60,43 +60,58 @@ The label's job is the generated README Model column and in-code self-descriptio
    *previous* model's entry to `is_current=False`.
 3. **`src/stt_benchmark/models.py`** — add a `ServiceName` enum value matching the
    new registry key (e.g. `ASSEMBLYAI_U3_RT_PRO = "assemblyai_u3_rt_pro"`).
-4. **`scripts/plot-config.json`** — add the new key to the `services` list to
-   feature it in the published plots and the generated README table. Labels are
-   derived automatically from `vendor` / `model_label`, so there is no name map to
-   update (add an optional `display_names` override only to override a derived
-   label). Keep the superseded key in the list too if you want both in the plot.
-5. **`README.md`** — add the new key to the Supported Services list. You do **not**
-   edit the Results Summary table by hand — it's generated between the
-   `RESULTS_TABLE` markers in step 7.
-6. **Run the benchmark** for the new entry:
+4. **`README.md`** — add the new key to the Supported Services list. You do **not**
+   hand-type the Results Summary row — step 6 writes it from your benchmark
+   database between the `RESULTS_TABLE` markers.
+5. **Run the benchmark** for the new entry:
    ```bash
    uv run stt-benchmark run --services assemblyai_u3_rt_pro
    uv run stt-benchmark ground-truth   # if not already generated for these samples
    uv run stt-benchmark wer --services assemblyai_u3_rt_pro
    ```
-7. **Regenerate plots + README table** (one command does both — the table is
-   rebuilt from the registry + database for the plot-config services, and written
-   between the `RESULTS_TABLE` markers in `README.md`):
+6. **Add your row to the README table** — a *targeted* upsert that reads only this
+   service's metrics from your local database and inserts/replaces just its row,
+   leaving every other vendor's row untouched (Vendor/Model and number formatting
+   come from the registry):
    ```bash
-   uv run python scripts/pareto-frontier-plot.py --config scripts/plot-config.json
+   uv run stt-benchmark update-readme --services assemblyai_u3_rt_pro
    ```
+7. **Regenerate the plots from the README** — the README table is the single
+   source of truth; this reads it and never rewrites it:
+   ```bash
+   uv run python scripts/pareto-frontier-plot.py
+   ```
+8. **Commit** the changed `README.md` and `assets/*.png` and open a PR. The diff
+   is your one new row plus the regenerated charts.
 
 ## Checklist: add a brand-new vendor
 
-Same as above, but the key is just the vendor name (no suffix), `is_current=True`,
-and you add it to `plot-config.json` rather than swapping an existing key.
+Same as above, but the key is just the vendor name (no suffix) and
+`is_current=True`.
+
+## Why the README table is the single source of truth
+
+More than one person contributes results, and each contributor only has raw
+benchmark runs for the vendors *they* ran locally. So the published numbers live
+in the **README Results Summary table** (between the `<!-- RESULTS_TABLE:START -->`
+/ `<!-- RESULTS_TABLE:END -->` markers), and everyone updates it the same way:
+
+- `stt-benchmark update-readme --services <key>` upserts **one row at a time**
+  from your local database — a targeted insert/replace keyed by
+  `(vendor, model_label)`. It never rebuilds the whole table, so it can't wipe a
+  row you don't have locally. Rows for services with no registry entry are
+  preserved too.
+- `scripts/pareto-frontier-plot.py` **reads** the table and renders every row
+  into the Pareto charts. It is read-only with respect to the README, so the
+  charts always match the published numbers and regenerating them is safe.
 
 ## Where the metadata lives
 
 - `vendor` / `model_label` / `is_current` live on `ServiceDefinition` in
-  `services.py`, so each entry is self-describing. Plot/report labels are derived
-  from these via `get_display_names()` — there is no separate name map to maintain.
-- `plot-config.json` decides **which** models appear in the published plots (its
-  `services` list), plus optional per-service `display_names` overrides. Keeping a
-  model out of the plots does not remove it from the registry — it stays runnable.
-- The README **Results Summary table** is generated, not hand-edited:
-  `scripts/pareto-frontier-plot.py` rebuilds it from the registry (Vendor =
-  `vendor`, Model = `model_label`) and the results database for the same
-  plot-config services, and writes it between the `<!-- RESULTS_TABLE:START -->` /
-  `<!-- RESULTS_TABLE:END -->` markers in `README.md`. If those markers are
-  missing it falls back to writing `assets/results-table.md`.
+  `services.py`, so each entry is self-describing. `update-readme` uses them for
+  the Vendor/Model columns and the table sort order (vendor, current model first).
+  Plot labels are derived from `vendor` / `model_label` for the chart legend.
+- `scripts/plot-config.json` holds optional plot tunables (`latency`, `output`,
+  and per-label `display_names` overrides). It no longer selects which models
+  appear — the plot renders whatever rows are in the README table. Use
+  `pareto-frontier-plot.py -s <label> ...` for an ad-hoc subset.
