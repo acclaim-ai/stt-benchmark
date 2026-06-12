@@ -54,6 +54,18 @@ ServiceFactory = Callable[[], FrameProcessor]
 
 
 @dataclass
+class GrpcServiceOptions:
+    """Runtime options for gRPC-based ASR services (CLI-configurable)."""
+
+    asr_backend_url: str = "localhost:50052"
+    asr_backend_use_ssl: bool = False
+    asr_backend_language: str = "en"
+    speech_proxy_url: str = "speech-proxy.main.stage.aiphoria.pro:443"
+    speech_proxy_use_ssl: bool = True
+    speech_proxy_recognizer: str = "asr_deepgram_en_nova3"
+
+
+@dataclass
 class ServiceDefinition:
     """Definition of an STT service."""
 
@@ -134,18 +146,34 @@ def create_deepgram() -> FrameProcessor:
     )
 
 
-def create_aiphoria() -> FrameProcessor:
+def create_asr_backend(
+    grpc_options: GrpcServiceOptions | None = None,
+) -> FrameProcessor:
     """Setup 1a: our ASR (asr-backend gRPC) + our native VAD-EOU."""
-    from stt_benchmark.services_aiphoria.aiphoria_stt import AiphoriaSTTService
+    from stt_benchmark.services_aiphoria.asr_backend import AsrBackendService
 
-    return AiphoriaSTTService(mode="native_eou")
+    opts = grpc_options or GrpcServiceOptions()
+    return AsrBackendService(
+        url=opts.asr_backend_url,
+        use_ssl=opts.asr_backend_use_ssl,
+        language=opts.asr_backend_language,
+        mode="native_eou",
+    )
 
 
-def create_aiphoria_exteou() -> FrameProcessor:
+def create_asr_backend_exteou(
+    grpc_options: GrpcServiceOptions | None = None,
+) -> FrameProcessor:
     """Setup 1b: our ASR + shared external Silero-VAD-EOU (eou.py)."""
-    from stt_benchmark.services_aiphoria.aiphoria_stt import AiphoriaSTTService
+    from stt_benchmark.services_aiphoria.asr_backend import AsrBackendService
 
-    return AiphoriaSTTService(mode="external_eou")
+    opts = grpc_options or GrpcServiceOptions()
+    return AsrBackendService(
+        url=opts.asr_backend_url,
+        use_ssl=opts.asr_backend_use_ssl,
+        language=opts.asr_backend_language,
+        mode="external_eou",
+    )
 
 
 def create_deepgram_exteou() -> FrameProcessor:
@@ -168,40 +196,18 @@ def create_deepgram_native() -> FrameProcessor:
     )
 
 
-def create_deepgram_proxy() -> FrameProcessor:
-    """Setup 4: Deepgram via production speech-proxy (gRPC v2, TLS, UtteranceEnd 1000ms)."""
-    from stt_benchmark.services_aiphoria.deepgram_proxy import (
-        DeepgramProxySTTService,
+def create_speech_proxy(
+    grpc_options: GrpcServiceOptions | None = None,
+) -> FrameProcessor:
+    """Setup 4: ASR via speech-proxy (gRPC v2)."""
+    from stt_benchmark.services_aiphoria.speech_proxy import SpeechProxyService
+
+    opts = grpc_options or GrpcServiceOptions()
+    return SpeechProxyService(
+        url=opts.speech_proxy_url,
+        use_ssl=opts.speech_proxy_use_ssl,
+        recognizer=opts.speech_proxy_recognizer,
     )
-
-    return DeepgramProxySTTService()
-
-
-def create_deepgram_proxy_v2() -> FrameProcessor:
-    """Setup 4b: identical speech-proxy path, re-measured after reported fix.
-
-    Same DeepgramProxySTTService (the change is server-side on the proxy, not
-    in our client). Separate service name so the pre-fix deepgram_proxy rows are
-    preserved for a before/after comparison.
-    """
-    from stt_benchmark.services_aiphoria.deepgram_proxy import (
-        DeepgramProxySTTService,
-    )
-
-    return DeepgramProxySTTService()
-
-
-def create_deepgram_proxy_vad_v2() -> FrameProcessor:
-    """Setup 4c: speech-proxy with the new recognizer asr_deepgram_en_nova3_vad_v2.
-
-    This is the actual server-side fix (faster VAD endpointing). Same
-    DeepgramProxySTTService client, only the recognizer differs.
-    """
-    from stt_benchmark.services_aiphoria.deepgram_proxy import (
-        DeepgramProxySTTService,
-    )
-
-    return DeepgramProxySTTService(recognizer="asr_deepgram_en_nova3_vad_v2")
 
 
 def create_elevenlabs() -> FrameProcessor:
@@ -453,12 +459,12 @@ STT_SERVICES: dict[str, ServiceDefinition] = {
         factory=create_deepgram,
         required_env_vars=["DEEPGRAM_API_KEY"],
     ),
-    "aiphoria": ServiceDefinition(
-        factory=create_aiphoria,
+    "asr_backend": ServiceDefinition(
+        factory=create_asr_backend,
         required_env_vars=[],
     ),
-    "aiphoria_exteou": ServiceDefinition(
-        factory=create_aiphoria_exteou,
+    "asr_backend_exteou": ServiceDefinition(
+        factory=create_asr_backend_exteou,
         required_env_vars=[],
     ),
     "deepgram_exteou": ServiceDefinition(
@@ -469,17 +475,9 @@ STT_SERVICES: dict[str, ServiceDefinition] = {
         factory=create_deepgram_native,
         required_env_vars=["DEEPGRAM_API_KEY"],
     ),
-    "deepgram_proxy": ServiceDefinition(
-        factory=create_deepgram_proxy,
-        required_env_vars=[],  # TLS only; Deepgram key is server-side on the proxy
-    ),
-    "deepgram_proxy_v2": ServiceDefinition(
-        factory=create_deepgram_proxy_v2,
-        required_env_vars=[],  # TLS only; Deepgram key is server-side on the proxy
-    ),
-    "deepgram_proxy_vad_v2": ServiceDefinition(
-        factory=create_deepgram_proxy_vad_v2,
-        required_env_vars=[],  # TLS only; Deepgram key is server-side on the proxy
+    "speech_proxy": ServiceDefinition(
+        factory=create_speech_proxy,
+        required_env_vars=[],  # Deepgram key is server-side on the proxy
     ),
     "elevenlabs": ServiceDefinition(
         factory=create_elevenlabs,
@@ -610,9 +608,17 @@ def is_service_available(name: str) -> bool:
     return all(_get_env_from_config(env_var) for env_var in definition.required_env_vars)
 
 
+_GRPC_SERVICE_FACTORIES = {
+    "asr_backend": create_asr_backend,
+    "asr_backend_exteou": create_asr_backend_exteou,
+    "speech_proxy": create_speech_proxy,
+}
+
+
 def create_stt_service(
     service_name: "ServiceName",
     aiohttp_session: "aiohttp.ClientSession | None" = None,
+    grpc_options: GrpcServiceOptions | None = None,
 ) -> FrameProcessor:
     """Create an STT service instance using its factory function.
 
@@ -620,6 +626,7 @@ def create_stt_service(
         service_name: The STT service to create.
         aiohttp_session: Optional aiohttp session for services that require one
             (i.e. services with needs_aiohttp=True in their ServiceDefinition).
+        grpc_options: Optional runtime options for gRPC-based ASR services.
 
     Returns:
         Configured STT service instance.
@@ -631,6 +638,9 @@ def create_stt_service(
 
     definition = get_service_definition(service_name.value)
     logger.debug(f"Creating {service_name.value} STT service")
+
+    if service_name.value in _GRPC_SERVICE_FACTORIES:
+        return _GRPC_SERVICE_FACTORIES[service_name.value](grpc_options)
 
     if definition.needs_aiohttp:
         if aiohttp_session is None:

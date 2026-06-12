@@ -11,7 +11,7 @@ from stt_benchmark.analysis.statistics import compute_statistics, format_statist
 from stt_benchmark.config import get_config
 from stt_benchmark.models import BenchmarkRun, ServiceName
 from stt_benchmark.pipeline.benchmark_runner import BenchmarkRunner
-from stt_benchmark.services import STT_SERVICES, parse_services_arg
+from stt_benchmark.services import STT_SERVICES, GrpcServiceOptions, parse_services_arg
 from stt_benchmark.storage.database import Database
 
 app = typer.Typer()
@@ -58,6 +58,41 @@ def run_benchmark(
         "-v",
         help="VAD silence duration to trigger stop (seconds)",
     ),
+    chunk_ms: int = typer.Option(
+        20,
+        "--chunk-ms",
+        help="Input audio chunk duration in milliseconds",
+    ),
+    asr_backend_url: str = typer.Option(
+        "localhost:50052",
+        "--asr-backend-url",
+        help="gRPC URL for asr_backend / asr_backend_exteou",
+    ),
+    asr_backend_use_ssl: bool = typer.Option(
+        False,
+        "--asr-backend-use-ssl/--no-asr-backend-use-ssl",
+        help="Use TLS for asr_backend connection",
+    ),
+    language: str = typer.Option(
+        "en",
+        "--language",
+        help="Language ID for asr_backend services",
+    ),
+    speech_proxy_url: str = typer.Option(
+        "speech-proxy.main.stage.aiphoria.pro:443",
+        "--speech-proxy-url",
+        help="gRPC URL for speech_proxy",
+    ),
+    speech_proxy_use_ssl: bool = typer.Option(
+        True,
+        "--speech-proxy-use-ssl/--no-speech-proxy-use-ssl",
+        help="Use TLS for speech_proxy connection",
+    ),
+    recognizer: str = typer.Option(
+        "asr_deepgram_en_nova3",
+        "--recognizer",
+        help="Recognizer name for speech_proxy",
+    ),
     test: bool = typer.Option(
         False,
         "--test",
@@ -89,6 +124,7 @@ def run_benchmark(
         console.print(f"Sample limit: {limit}")
     console.print(f"Skip existing: {skip_existing}")
     console.print(f"VAD stop secs: {vad_stop_secs}")
+    console.print(f"Chunk ms: {chunk_ms}")
     if test:
         console.print("[yellow]Test mode: using separate test database[/yellow]")
 
@@ -129,7 +165,19 @@ def run_benchmark(
         await db.insert_run(run_record)
 
         # Create benchmark runner
-        runner = BenchmarkRunner(vad_stop_secs=vad_stop_secs)
+        grpc_options = GrpcServiceOptions(
+            asr_backend_url=asr_backend_url,
+            asr_backend_use_ssl=asr_backend_use_ssl,
+            asr_backend_language=language,
+            speech_proxy_url=speech_proxy_url,
+            speech_proxy_use_ssl=speech_proxy_use_ssl,
+            speech_proxy_recognizer=recognizer,
+        )
+        runner = BenchmarkRunner(
+            vad_stop_secs=vad_stop_secs,
+            chunk_ms=chunk_ms,
+            grpc_options=grpc_options,
+        )
 
         all_stats = []
 

@@ -21,7 +21,7 @@ from stt_benchmark.models import AudioSample, BenchmarkResult, ServiceName
 from stt_benchmark.observers.metrics_collector import MetricsCollectorObserver
 from stt_benchmark.observers.transcription_collector import TranscriptionCollectorObserver
 from stt_benchmark.pipeline.synthetic_transport import SyntheticInputTransport
-from stt_benchmark.services import create_stt_service, get_service_definition
+from stt_benchmark.services import GrpcServiceOptions, create_stt_service, get_service_definition
 
 
 class BenchmarkRunner:
@@ -35,6 +35,7 @@ class BenchmarkRunner:
         max_silence_timeout_secs: float = 10.0,
         transcription_timeout_secs: float = 10.0,
         post_transcription_delay_secs: float = 2.0,
+        grpc_options: GrpcServiceOptions | None = None,
     ):
         """Initialize the benchmark runner.
 
@@ -46,6 +47,7 @@ class BenchmarkRunner:
             transcription_timeout_secs: Max time to wait for transcription after silence ends.
             post_transcription_delay_secs: Time to continue sending silence after first
                 transcription to collect additional segments.
+            grpc_options: Runtime options for gRPC-based ASR services.
         """
         config = get_config()
         self.sample_rate = sample_rate or config.sample_rate
@@ -56,6 +58,7 @@ class BenchmarkRunner:
             transcription_timeout_secs or config.transcription_timeout_secs
         )
         self.post_transcription_delay_secs = post_transcription_delay_secs
+        self.grpc_options = grpc_options
 
     async def benchmark_sample(
         self,
@@ -155,7 +158,11 @@ class BenchmarkRunner:
             BenchmarkResult with TTFB and transcription.
         """
         # Create STT service using its factory
-        stt_service = create_stt_service(service_name, aiohttp_session=aiohttp_session)
+        stt_service = create_stt_service(
+            service_name,
+            aiohttp_session=aiohttp_session,
+            grpc_options=self.grpc_options,
+        )
 
         # Create transport with audio
         # Pass transcription_received event so transport sends silence

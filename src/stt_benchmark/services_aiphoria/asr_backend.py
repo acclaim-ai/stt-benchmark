@@ -1,4 +1,4 @@
-"""Pipecat STT service bridging to the deployed asr-backend-service (gRPC v2).
+"""Pipecat STT service bridging to asr-backend-service (gRPC v2).
 
 Used by benchmark setups:
   * 1a  mode="native_eou"   -> final TranscriptionFrame when the backend emits
@@ -50,14 +50,15 @@ EOU_REPEATING = 3
 PRODUCT_EOU_REASONS = (EOU_ORGANIC, EOU_REPEATING)
 
 
-class AiphoriaSTTService(STTService):
+class AsrBackendService(STTService):
     """Streams audio to asr-backend-service AudioToText (gRPC v2)."""
 
     def __init__(
         self,
         *,
-        target: str = "localhost:50052",
-        language_id: str = "en",
+        url: str = "localhost:50052",
+        use_ssl: bool = False,
+        language: str = "en",
         audio_format: str = "PCM_S16_LE_16000",
         mode: str = "native_eou",
         max_silence_ms: int = 640,
@@ -71,8 +72,9 @@ class AiphoriaSTTService(STTService):
         )
         if mode not in ("native_eou", "external_eou"):
             raise ValueError(mode)
-        self._target = target
-        self._language_id = language_id
+        self._url = url
+        self._use_ssl = use_ssl
+        self._language = language
         self._audio_format = audio_format
         self._mode = mode
         self._max_silence_ms = max_silence_ms
@@ -89,10 +91,17 @@ class AiphoriaSTTService(STTService):
     async def start(self, frame: StartFrame):
         await super().start(frame)
         self._send_q = asyncio.Queue()
-        self._channel = grpc.aio.insecure_channel(self._target)
+        if self._use_ssl:
+            self._channel = grpc.aio.secure_channel(
+                self._url, grpc.ssl_channel_credentials()
+            )
+        else:
+            self._channel = grpc.aio.insecure_channel(self._url)
         self._stub = ASRStub(self._channel)
         self._reset_utterance()
-        self._conn_task = self.create_task(self._connection_handler(), name="aiphoria_grpc")
+        self._conn_task = self.create_task(
+            self._connection_handler(), name="asr_backend_grpc"
+        )
 
     async def stop(self, frame):
         await super().stop(frame)
@@ -121,7 +130,7 @@ class AiphoriaSTTService(STTService):
         yield AsrRequest(
             request_config=AsrRequestConfig(
                 audio_metadata=AudioMetadata(format=self._audio_format),
-                language_id=self._language_id,
+                language_id=self._language,
             )
         )
         while True:

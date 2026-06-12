@@ -15,22 +15,19 @@ All report TTFS on the same shared clock, so they're directly comparable.
 
 | service name | setup | what it measures |
 |---|---|---|
-| `aiphoria` | 1a | our ASR + our **native in-Triton VAD-EOU** (`max_silence_ms=640`); final on backend `is_final` with `eou_reason` organic/repeating. **True product latency.** |
-| `aiphoria_exteou` | 1b | our ASR + the **shared external `eou.py`** (640 ms rule), finalization decided client-side. Read the **1a − 1b gap** as our in-Triton/gRPC EOU overhead. |
+| `asr_backend` | 1a | our ASR + our **native in-Triton VAD-EOU** (`max_silence_ms=640`); final on backend `is_final` with `eou_reason` organic/repeating. **True product latency.** |
+| `asr_backend_exteou` | 1b | our ASR + the **shared external `eou.py`** (640 ms rule), finalization decided client-side. Read the **1a − 1b gap** as our in-Triton/gRPC EOU overhead. |
 
-**B. Production speech-proxy path** — Deepgram reached **through our** staging
-speech-proxy (`speech-proxy.main.stage.aiphoria.pro:443`, same platform_proto v2
-gRPC API, TLS). This is the real production integration path and where the
-**Deepgram VAD-fix recognizers** are measured. All three use the same
-`DeepgramProxySTTService` client (`services_aiphoria/deepgram_proxy.py`); only the
-server-side recognizer differs. The proxy finalizes on the **first** `is_final`
-with non-empty text (`eou_reason`-agnostic):
+**B. Production speech-proxy path** — ASR reached **through our** staging
+speech-proxy (same platform_proto v2 gRPC API). This is the real production
+integration path. The client is `SpeechProxyService`
+(`services_aiphoria/speech_proxy.py`); pass the server-side recognizer via
+`--recognizer`. The proxy finalizes on the **first** `is_final` with non-empty
+text (`eou_reason`-agnostic):
 
-| service name | setup | recognizer / what it measures |
+| service name | setup | what it measures |
 |---|---|---|
-| `deepgram_proxy` | 4 | `asr_deepgram_en_nova3` — proxy-native Deepgram UtteranceEnd (`utterance_end_ms=1000`). Baseline production path (2026-05-19). |
-| `deepgram_proxy_v2` | 4b | same recognizer, re-measured after a reported server-side proxy fix (2026-05-21). Separate name preserves the 4 rows for before/after. |
-| `deepgram_proxy_vad_v2` | 4c→refix | `asr_deepgram_en_nova3_vad_v2` — the **faster-VAD-endpointing recognizer** (the fix we track). ⚠️ premature endpointing truncates long turns / fires before the anchor → those turns become *unmeasurable* (see caveat below). |
+| `speech_proxy` | 4 | ASR via speech-proxy; recognizer chosen at CLI (default `asr_deepgram_en_nova3`). ⚠️ aggressive VAD recognizers can truncate long turns / fire before the anchor → those turns become *unmeasurable* (see caveat below). |
 
 (For contrast the harness also has the **non-ours** direct-Deepgram-cloud setups
 `deepgram` (2), `deepgram_native` (2b), `deepgram_exteou` (3) — those need
@@ -51,20 +48,19 @@ Metric = TTFS (pipecat TTFB instrumentation): final `TranscriptionFrame` receipt
    ```bash
    uv run stt-benchmark download --num-samples 100
    ```
-2. **Target reachable** — the benchmark is only a gRPC **client**; the target is
-   **hardcoded per service**, no env var or CLI flag:
-   - *aiphoria / aiphoria_exteou* → `localhost:50052`, `grpc.aio.insecure_channel`,
-     `language_id="en"` (`AiphoriaSTTService.__init__`). The `asr-backend-service`
-     (fronting Triton) must already be running. **No API key.**
-   - *deepgram_proxy\** → `speech-proxy.main.stage.aiphoria.pro:443`,
-     `grpc.aio.secure_channel` (TLS), recognizer passed as `language_id`
-     (`PROXY_TARGET` / `PROXY_RECOGNIZER` in `deepgram_proxy.py`). The proxy talks
-     to Deepgram server-side, so the **client needs no `DEEPGRAM_API_KEY`** — only
-     network reach to the proxy.
+2. **Target reachable** — the benchmark is only a gRPC **client**. Connection
+   settings are passed via CLI flags (defaults match local dev / staging):
+   - *asr_backend / asr_backend_exteou* → `--asr-backend-url` (default
+     `localhost:50052`), `--no-asr-backend-use-ssl` (default), `--language en`.
+     The `asr-backend-service` (fronting Triton) must already be running.
+     **No API key.**
+   - *speech_proxy* → `--speech-proxy-url` (default
+     `speech-proxy.main.stage.aiphoria.pro:443`), `--speech-proxy-use-ssl`
+     (default), `--recognizer` (default `asr_deepgram_en_nova3`). The proxy talks
+     to the ASR backend server-side, so the **client needs no `DEEPGRAM_API_KEY`**
+     — only network reach to the proxy.
 
-   To point at a different backend/proxy, recognizer, or toggle TLS, edit the
-   `create_*` factory in `src/stt_benchmark/services.py` (or the `PROXY_*`
-   constants), not a flag.
+   Additional flag: `--chunk-ms` (input frame size, default 20 ms).
 
 ## Concrete commands
 
@@ -74,25 +70,30 @@ cd /home/mle/asr-junk/danil-andreev/tasks/deepgram_vs_ours_latency/stt-benchmark
 
 # --- A. direct asr-backend path (our ASR) ---
 # 1. Smoke-test: 2 samples into the throwaway --test DB
-uv run stt-benchmark run --services aiphoria --limit 2 --test
+uv run stt-benchmark run --services asr_backend --limit 2 --test
 # 2. Full product-latency run (Setup 1a)
-uv run stt-benchmark run --services aiphoria --limit 100 --no-skip-existing
+uv run stt-benchmark run --services asr_backend --limit 100 --no-skip-existing
 # 3. Both of ours in one run (comma-separated) -> gives the 1a vs 1b gap
-uv run stt-benchmark run --services aiphoria,aiphoria_exteou --limit 100 --no-skip-existing
+uv run stt-benchmark run --services asr_backend,asr_backend_exteou --limit 100 --no-skip-existing
 
-# --- B. production speech-proxy path (Deepgram + our proxy / VAD-fix recognizers) ---
-# 4. Smoke the proxy + the vad_v2 fix recognizer first (cheap, throwaway DB)
-uv run stt-benchmark run --services deepgram_proxy_vad_v2 --limit 2 --test
-# 5. Full re-measure of the vad_v2 fix (the recognizer we track)
-uv run stt-benchmark run --services deepgram_proxy_vad_v2 --limit 100 --no-skip-existing
-# 6. Before/after across the proxy recognizers in one shot
-uv run stt-benchmark run --services deepgram_proxy,deepgram_proxy_v2,deepgram_proxy_vad_v2 \
-    --limit 100 --no-skip-existing
+# --- B. production speech-proxy path ---
+# 4. Smoke the proxy + vad_v2 recognizer first (cheap, throwaway DB)
+uv run stt-benchmark run --services speech_proxy \
+  --recognizer asr_deepgram_en_nova3_vad_v2 --limit 2 --test
+# 5. Full re-measure of the vad_v2 fix recognizer
+uv run stt-benchmark run --services speech_proxy \
+  --recognizer asr_deepgram_en_nova3_vad_v2 --limit 100 --no-skip-existing
+# 6. Local proxy dev (no TLS)
+uv run stt-benchmark run --services speech_proxy \
+  --speech-proxy-url localhost:50053 --no-speech-proxy-use-ssl \
+  --recognizer asr_deepgram_en_nova3 --limit 2 --test
 
 # --- tuning + reporting (apply to either path) ---
 # 7. Tighten / loosen the speech-end anchor
-uv run stt-benchmark run --services aiphoria --limit 100 --vad-stop-secs 0.3 --no-skip-existing
-# 8. Aggregate -> report
+uv run stt-benchmark run --services asr_backend --limit 100 --vad-stop-secs 0.3 --no-skip-existing
+# 8. Larger input chunks
+uv run stt-benchmark run --services asr_backend --chunk-ms 100 --limit 2 --test
+# 9. Aggregate -> report
 uv run stt-benchmark report               # built-in reporter (all services in the DB)
 uv run python ../make_report.py           # task's curated TTFS table+json into ../results/
 # For the proxy/vad_v2 path also run the validity-aware analysis (kept% + early-final gate):
@@ -103,21 +104,25 @@ uv run python ../analyze_vad_v2_refix_20260530.py
 `cli/main.py`): `--services/-s` (comma-separated names, or `all`), `--limit/-n N`,
 `--model/-m`, `--skip-existing/--no-skip-existing` (default **skip**; pass
 `--no-skip-existing` to re-measure rows already in the DB), `--vad-stop-secs/-v`
-(default 0.2), `--test/-t` (use the separate test DB so you don't touch the real
-`results.db`). Those are the **only** `run` flags — seed/dataset come from config.
+(default 0.2), `--chunk-ms` (input frame size, default 20),
+`--asr-backend-url`, `--asr-backend-use-ssl/--no-asr-backend-use-ssl`,
+`--language`, `--speech-proxy-url`, `--speech-proxy-use-ssl/--no-speech-proxy-use-ssl`,
+`--recognizer`,
+`--test/-t` (use the separate test DB so you don't touch the real
+`results.db`). Seed/dataset come from config.
 
-> ⚠️ **Validity caveat for `deepgram_proxy_vad_v2`.** Its aggressive VAD often
-> endpoints before the Silero speech-end anchor and/or truncates long turns, so a
-> raw TTFS percentile over the DB is misleading. Gate on transcript completeness
-> (kept% vs the full-turn `deepgram_proxy` reference) and drop early/no-TTFB rows
-> before reading latency — that's exactly what `../analyze_vad_v2_refix_20260530.py`
-> does. See `../README.md` (task root) for the full 2026-05-30 result.
+> ⚠️ **Validity caveat for aggressive VAD recognizers** (e.g.
+> `asr_deepgram_en_nova3_vad_v2`). Their aggressive VAD often endpoints before
+> the Silero speech-end anchor and/or truncates long turns, so a raw TTFS
+> percentile over the DB is misleading. Gate on transcript completeness (kept% vs
+> a full-turn reference recognizer) and drop early/no-TTFB rows before reading
+> latency — that's exactly what `../analyze_vad_v2_refix_20260530.py` does. See
+> `../README.md` (task root) for the full 2026-05-30 result.
 
 > Task-dir convention: give each real run its own launcher script + log/marker
-> (see `../run_*_*.sh`), and for a before/after on the same path, register a **new
-> service name** in `models.py` + `services.py` rather than overwriting existing
-> rows. Available commands: `run`, `download`, `report`, `ground-truth`, `wer`,
-> `export` (the registered service names live in `models.py`).
+> (see `../run_*_*.sh`). Available commands: `run`, `download`, `report`,
+> `ground-truth`, `wer`, `export` (the registered service names live in
+> `models.py`).
 
 ---
 
