@@ -19,7 +19,6 @@ class ServiceName(str, Enum):
     AZURE = "azure"
     CARTESIA = "cartesia"
     DEEPGRAM = "deepgram"
-    # DEEPGRAM_FLUX = "deepgram_flux"
     ELEVENLABS = "elevenlabs"
     ELEVENLABS_HTTP = "elevenlabs_http"
     FAL = "fal"
@@ -45,6 +44,7 @@ class ServiceName(str, Enum):
     DEEPGRAM_PROXY = "deepgram_proxy"  # setup 4: Deepgram via production speech-proxy (gRPC v2, UtteranceEnd 1000ms)
     DEEPGRAM_PROXY_V2 = "deepgram_proxy_v2"  # setup 4b: same speech-proxy path, re-measured 2026-05-21 after reported server-side fix
     DEEPGRAM_PROXY_VAD_V2 = "deepgram_proxy_vad_v2"  # setup 4c: speech-proxy, new recognizer asr_deepgram_en_nova3_vad_v2 (faster VAD endpointing)
+    DEEPGRAM_FLUX = "deepgram_flux"  # speech-proxy, Deepgram Flux model asr_deepgram_flux_en (single self-endpointed is_final)
 
 
 class AudioSample(BaseModel):
@@ -89,6 +89,21 @@ class AggregateStatistics(BaseModel):
     model_name: str | None = None
     num_samples: int
     num_errors: int = Field(description="Number of samples with errors")
+    num_premature_eos: int = Field(
+        default=0,
+        description="Non-error utterances with no measurable TTFB (dropped from the "
+        "latency percentiles): early-final-before-EOS plus no-final-captured",
+    )
+    num_no_final: int = Field(
+        default=0,
+        description="Subset of num_premature_eos with an empty/absent final transcript "
+        "(no usable post-anchor final was captured) vs a real truncated early final",
+    )
+    fpr: float | None = Field(
+        default=None,
+        description="False-positive rate: early finals BEFORE end-of-speech with "
+        "content (num_premature_eos - num_no_final) / non-error utterances",
+    )
 
     # TTFB statistics (in seconds)
     ttfb_mean: float | None = None
