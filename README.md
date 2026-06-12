@@ -129,20 +129,27 @@ A framework for benchmarking Speech-to-Text services with TTFS (Time To Final Se
 
 Benchmark results on 1000 samples from the `pipecat-ai/smart-turn-data-v3.1-train` dataset.
 
-| Service | Transcripts | Perfect | WER Mean | Pooled WER | TTFS Median | TTFS P95 | TTFS P99 |
-|---------|-------------|---------|----------|------------|-------------|----------|----------|
-| AssemblyAI | 99.8% | 66.8% | 3.49% | 3.02% | 256ms | 362ms | 417ms |
-| AWS | 100.0% | 77.4% | 1.68% | 1.75% | 1136ms | 1527ms | 1897ms |
-| Azure | 100.0% | 82.9% | 1.21% | 1.18% | 1016ms | 1345ms | 1791ms |
-| Cartesia | 99.9% | 60.5% | 3.92% | 4.36% | 266ms | 364ms | 898ms |
-| Deepgram | 99.8% | 76.5% | 1.71% | 1.62% | 247ms | 298ms | 326ms |
-| Elevenlabs | 99.7% | 81.3% | 3.16% | 3.12% | 281ms | 348ms | 407ms |
-| Google | 100.0% | 69.0% | 2.84% | 2.85% | 878ms | 1155ms | 1570ms |
-| Mistral | 99.3% | 68.8% | 4.44% | 4.97% | 525ms | 973ms | 1913ms |
-| OpenAI | 99.3% | 75.9% | 3.24% | 3.06% | 637ms | 965ms | 1655ms |
-| Smallest AI | 100.0% | 72.4% | 2.30% | 2.37% | 398ms | 533ms | 1593ms |
-| Soniox | 99.8% | 84.1% | 1.25% | 1.29% | 249ms | 281ms | 310ms |
-| Speechmatics | 99.7% | 83.2% | 1.40% | 1.07% | 495ms | 676ms | 736ms |
+<!-- RESULTS_TABLE:START -->
+| Vendor | Model | Transcripts | Perfect | WER Mean | Pooled WER | TTFS Median | TTFS P95 | TTFS P99 |
+|--------|-------|-------------|---------|----------|------------|-------------|----------|----------|
+| AssemblyAI | u3-rt-pro | 99.8% | 83.9% | 1.74% | 1.34% | 335ms | 534ms | 613ms |
+| AssemblyAI | universal-streaming-english | 99.8% | 66.8% | 3.49% | 3.02% | 256ms | 362ms | 417ms |
+| AWS | N/A | 100.0% | 77.4% | 1.68% | 1.75% | 1136ms | 1527ms | 1897ms |
+| Azure | N/A | 100.0% | 82.9% | 1.21% | 1.18% | 1016ms | 1345ms | 1791ms |
+| Cartesia | ink-2 | 100.0% | 84.2% | 1.47% | 1.25% | 299ms | 328ms | 1584ms |
+| Cartesia | ink-whisper | 99.9% | 60.5% | 3.92% | 4.36% | 266ms | 364ms | 898ms |
+| Deepgram | nova-3-general | 99.8% | 76.5% | 1.71% | 1.62% | 247ms | 298ms | 326ms |
+| ElevenLabs | scribe_v2_realtime | 99.7% | 81.3% | 3.16% | 3.12% | 281ms | 348ms | 407ms |
+| Google | latest-long | 100.0% | 69.0% | 2.84% | 2.85% | 878ms | 1155ms | 1570ms |
+| Gradium | default | 99.7% | 65.3% | 3.72% | 3.96% | 570ms | 595ms | 614ms |
+| Mistral | voxtral-mini-transcribe-realtime-2602 | 99.3% | 68.8% | 4.44% | 4.97% | 525ms | 973ms | 1913ms |
+| NVIDIA | Nemotron 3.0 ASR (en) | 100.0% | 76.1% | 1.90% | 1.95% | 221ms | 238ms | 252ms |
+| NVIDIA | Nemotron 3.5 ASR (multilingual) | 99.6% | 62.0% | 4.54% | 4.58% | 236ms | 253ms | 266ms |
+| OpenAI | gpt-4o-transcribe | 99.3% | 75.9% | 3.24% | 3.06% | 637ms | 965ms | 1655ms |
+| Smallest AI | pulse | 100.0% | 72.4% | 2.30% | 2.37% | 398ms | 533ms | 1593ms |
+| Soniox | stt-rt-v4 | 99.8% | 84.1% | 1.25% | 1.29% | 249ms | 281ms | 310ms |
+| Speechmatics | N/A | 99.7% | 83.2% | 1.40% | 1.07% | 495ms | 676ms | 736ms |
+<!-- RESULTS_TABLE:END -->
 
 ### Latency vs Accuracy Trade-off
 
@@ -174,6 +181,32 @@ For production voice agents, **P95 latency matters more than median**. Even occa
 
 > **TTFS (Time To Final Segment)** is measured from when the user stops speaking to when the final transcription segment is received. For streaming voice agents, lower TTFS means faster response times.
 
+## Contributing a Result
+
+The Results Summary table above is the **single source of truth** for the
+published numbers and the Pareto charts. Multiple people contribute, so results
+are added one row at a time rather than by rebuilding the whole table. To add
+your model's result:
+
+1. Benchmark and score it locally:
+   ```bash
+   uv run stt-benchmark run --services <key>
+   uv run stt-benchmark wer --services <key>
+   ```
+2. Upsert just your row into the table — this reads only your service's metrics
+   from your local database and leaves every other vendor's row untouched:
+   ```bash
+   uv run stt-benchmark update-readme --services <key>
+   ```
+3. Regenerate the charts from the table (read-only with respect to the README),
+   then commit `README.md` and `assets/*.png`:
+   ```bash
+   uv run python scripts/pareto-frontier-plot.py
+   ```
+
+A brand-new vendor or model also needs a registry entry first — see
+**[Adding Models](docs/adding-models.md)** for the full checklist.
+
 ## Measure TTFS for Your Service
 
 If you're using Pipecat and want TTFS latency numbers for your STT service and configuration, see **[Measuring TTFS](docs/measuring-ttfs.md)** for a quick start guide. The P95/P99 values from this tool can be used directly in Pipecat's `ttfs_p99_latency` service configuration (Pipecat 0.0.102+).
@@ -202,7 +235,7 @@ uv run stt-benchmark report
 
 ## Installation
 
-Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone <repo-url>
@@ -269,9 +302,9 @@ This gives accuracy metrics that reflect real-world impact on downstream LLM app
 
 ## Supported Services
 
-`assemblyai`, `aws`, `azure`, `cartesia`, `deepgram`, `deepgram_flux`, `elevenlabs`, `fal`, `gladia`, `google`, `gradium`, `groq`, `nvidia`, `nvidia_sagemaker`, `openai`, `sarvam`, `smallest`, `soniox`, `speechmatics`, `whisper`
+`assemblyai`, `assemblyai_u3_rt_pro`, `aws`, `azure`, `cartesia`, `cartesia_ink2`, `deepgram`, `elevenlabs`, `elevenlabs_http`, `fal`, `gladia`, `google`, `gradium`, `groq`, `mistral`, `nvidia`, `nvidia_sagemaker`, `openai`, `openai_realtime`, `sarvam`, `sarvam_saaras_v3`, `smallest`, `soniox`, `speechmatics`, `whisper`, `xai`
 
-See `env.example` for required API keys.
+Each key is one (vendor, model) pair — a vendor with multiple models has multiple keys (e.g. `cartesia` / `cartesia_ink2`, `assemblyai` / `assemblyai_u3_rt_pro`). To add a model, see [docs/adding-models.md](docs/adding-models.md). See `env.example` for required API keys.
 
 ## CLI Commands
 
@@ -348,7 +381,7 @@ stt_benchmark_data/
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                        PipelineTask                      │
+│                      PipelineWorker                      │
 │  observers=[MetricsCollector, TranscriptionCollector]    │
 ├──────────────────────────────────────────────────────────┤
 │                                                          │
@@ -380,6 +413,7 @@ Audio samples are sourced from the `pipecat-ai/smart-turn-data-v3.1-train` datas
 
 - [CLI Reference](docs/cli.md) - Complete command documentation
 - [Running Analysis](docs/analysis.md) - Step-by-step analysis guide
+- [Adding Models](docs/adding-models.md) - How to add a new vendor or a new model for an existing vendor
 
 ## License
 
