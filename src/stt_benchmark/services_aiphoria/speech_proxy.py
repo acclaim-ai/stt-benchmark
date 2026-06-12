@@ -39,6 +39,7 @@ class SpeechProxyService(AsrBackendService):
         )
 
     async def _on_reply(self, resp):
+        self._trace_grpc_reply(resp)
         text = (getattr(resp, "raw_text", "") or "").strip()
         is_final = bool(getattr(resp, "is_final", False))
         if is_final and text:

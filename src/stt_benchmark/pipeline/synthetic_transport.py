@@ -35,6 +35,7 @@ class SyntheticInputTransport(BaseInputTransport):
         transcription_received: asyncio.Event | None = None,
         max_silence_timeout: float = 10.0,
         post_transcription_delay: float = 2.0,
+        stream_ready: asyncio.Event | None = None,
     ):
         """Initialize the synthetic input transport.
 
@@ -48,6 +49,8 @@ class SyntheticInputTransport(BaseInputTransport):
             max_silence_timeout: Maximum time to send silence in seconds (default 10.0s)
             post_transcription_delay: Time to continue sending silence after first
                 transcription to collect additional segments (default 2.0s)
+            stream_ready: Optional event to wait on before sending the first audio
+                chunk (e.g. gRPC stream setup for ASR backends).
         """
         params = TransportParams(
             audio_in_enabled=True,
@@ -61,6 +64,7 @@ class SyntheticInputTransport(BaseInputTransport):
         self._transcription_received = transcription_received
         self._max_silence_timeout = max_silence_timeout
         self._post_transcription_delay = post_transcription_delay
+        self._stream_ready = stream_ready
 
         # Calculate chunk size in bytes (16-bit audio = 2 bytes per sample)
         samples_per_chunk = int(sample_rate * chunk_ms / 1000)
@@ -85,6 +89,7 @@ class SyntheticInputTransport(BaseInputTransport):
         transcription_received: asyncio.Event | None = None,
         max_silence_timeout: float = 10.0,
         post_transcription_delay: float = 2.0,
+        stream_ready: asyncio.Event | None = None,
     ) -> "SyntheticInputTransport":
         """Create a transport from an audio file.
 
@@ -108,6 +113,7 @@ class SyntheticInputTransport(BaseInputTransport):
             transcription_received=transcription_received,
             max_silence_timeout=max_silence_timeout,
             post_transcription_delay=post_transcription_delay,
+            stream_ready=stream_ready,
         )
 
     async def start(self, frame: StartFrame):
@@ -128,6 +134,10 @@ class SyntheticInputTransport(BaseInputTransport):
     async def _pump_audio(self):
         """Pump audio frames into the pipeline with real-time pacing."""
         try:
+            if self._stream_ready is not None:
+                await self._stream_ready.wait()
+                logger.debug("SyntheticInputTransport: gRPC stream ready, starting audio")
+
             sleep_time = self._chunk_ms / 1000
             silence_data = bytes(self._chunk_size)  # Zero-filled = silence
 

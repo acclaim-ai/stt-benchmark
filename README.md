@@ -62,6 +62,27 @@ Metric = TTFS (pipecat TTFB instrumentation): final `TranscriptionFrame` receipt
 
    Additional flag: `--chunk-ms` (input frame size, default 20 ms).
 
+## Debug one sample (pipeline + VAD trace)
+
+`stt-benchmark debug` runs a **single** utterance through the same Pipecat pipeline
+as `run` (`SyntheticInputTransport` → Silero VAD → STT) and prints a stderr
+timeline: audio chunks, VAD start/stop, interim/final ASR, and TTFB. No DB writes.
+
+```bash
+# Benchmark sample from main DB
+uv run stt-benchmark debug --services asr_backend --sample-index 0
+
+# Custom file (wav/mp3/pcm)
+uv run stt-benchmark debug --services speech_proxy --file ./audio.wav \
+  --recognizer asr_deepgram_en_nova3
+
+# List samples
+uv run stt-benchmark debug --list-samples
+```
+
+For **raw gRPC** tracing without VAD (direct to backend/proxy), use
+[`scripts/debug_stream_to_service.py`](scripts/debug_stream_to_service.py).
+
 ## Concrete commands
 
 ```bash
@@ -120,7 +141,7 @@ uv run python ../analyze_vad_v2_refix_20260530.py
 > `../README.md` (task root) for the full 2026-05-30 result.
 
 > Task-dir convention: give each real run its own launcher script + log/marker
-> (see `../run_*_*.sh`). Available commands: `run`, `download`, `report`,
+> (see `../run_*_*.sh`). Available commands: `run`, `debug`, `download`, `report`,
 > `ground-truth`, `wer`, `export` (the registered service names live in
 > `models.py`).
 

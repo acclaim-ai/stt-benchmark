@@ -18,7 +18,7 @@ utterance and mark it finalized so the base reports immediately.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 
 import grpc
 from loguru import logger
@@ -48,6 +48,10 @@ from stt_benchmark.services_aiphoria.eou import ExternalVadEou
 EOU_ORGANIC = 2
 EOU_REPEATING = 3
 PRODUCT_EOU_REASONS = (EOU_ORGANIC, EOU_REPEATING)
+
+GrpcReplyTrace = Callable[[str, bool, int, int], None]
+
+STREAM_CONNECT_TIMEOUT_SECS = 10.0
 
 
 class AsrBackendService(STTService):
@@ -84,12 +88,33 @@ class AsrBackendService(STTService):
         self._latest_text = ""
         self._final_sent = False
         self._eou: ExternalVadEou | None = None
+        self._grpc_reply_trace: GrpcReplyTrace | None = None
+        self._stream_ready = asyncio.Event()
+
+    @property
+    def stream_ready_event(self) -> asyncio.Event:
+        """Set once the gRPC stream has accepted the request config."""
+        return self._stream_ready
+
+    def set_grpc_reply_trace(self, callback: GrpcReplyTrace | None) -> None:
+        """Register a callback to trace every raw gRPC reply (debug runs only)."""
+        self._grpc_reply_trace = callback
+
+    def _trace_grpc_reply(self, resp) -> None:
+        if self._grpc_reply_trace is None:
+            return
+        raw_text = getattr(resp, "raw_text", "") or ""
+        is_final = bool(getattr(resp, "is_final", False))
+        reason = int(getattr(resp, "eou_reason", 0) or 0)
+        processed_ms = int(getattr(resp, "processed_milliseconds", 0) or 0)
+        self._grpc_reply_trace(raw_text, is_final, reason, processed_ms)
 
     def can_generate_metrics(self) -> bool:
         return True
 
     async def start(self, frame: StartFrame):
         await super().start(frame)
+        self._stream_ready.clear()
         self._send_q = asyncio.Queue()
         if self._use_ssl:
             self._channel = grpc.aio.secure_channel(
@@ -102,6 +127,18 @@ class AsrBackendService(STTService):
         self._conn_task = self.create_task(
             self._connection_handler(), name="asr_backend_grpc"
         )
+        try:
+            await asyncio.wait_for(
+                self._stream_ready.wait(),
+                timeout=STREAM_CONNECT_TIMEOUT_SECS,
+            )
+        except asyncio.TimeoutError as e:
+            await self._shutdown()
+            raise TimeoutError(
+                f"{self}: gRPC stream not ready within "
+                f"{STREAM_CONNECT_TIMEOUT_SECS}s ({self._url})"
+            ) from e
+        logger.debug(f"{self}: gRPC stream ready ({self._url})")
 
     async def stop(self, frame):
         await super().stop(frame)
@@ -120,6 +157,7 @@ class AsrBackendService(STTService):
         if self._channel is not None:
             await self._channel.close()
             self._channel = None
+        self._stream_ready.clear()
 
     def _reset_utterance(self):
         self._latest_text = ""
@@ -133,6 +171,7 @@ class AsrBackendService(STTService):
                 language_id=self._language,
             )
         )
+        self._stream_ready.set()
         while True:
             item = await self._send_q.get()
             if item is None:
@@ -158,6 +197,7 @@ class AsrBackendService(STTService):
         await self.push_frame(frame)
 
     async def _on_reply(self, resp):
+        self._trace_grpc_reply(resp)
         text = (getattr(resp, "raw_text", "") or "").strip()
         is_final = bool(getattr(resp, "is_final", False))
         reason = int(getattr(resp, "eou_reason", 0) or 0)
@@ -182,6 +222,7 @@ class AsrBackendService(STTService):
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:
         if self._send_q is not None:
+            await self._stream_ready.wait()
             self._send_q.put_nowait(audio)
         if self._mode == "external_eou" and self._eou is not None:
             if self._eou.feed(audio) and self._latest_text:

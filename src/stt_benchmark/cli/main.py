@@ -3,6 +3,7 @@
 import typer
 
 from stt_benchmark.cli.benchmark import app as benchmark_app
+from stt_benchmark.cli.debug import app as debug_app
 from stt_benchmark.cli.download import app as download_app
 from stt_benchmark.cli.export import app as export_app
 from stt_benchmark.cli.ground_truth import app as ground_truth_app
@@ -18,6 +19,7 @@ app = typer.Typer(
 # Add subcommands
 app.add_typer(download_app, name="download", help="Download and prepare audio samples")
 app.add_typer(benchmark_app, name="run", help="Run STT benchmarks")
+app.add_typer(debug_app, name="debug", help="Debug one sample through the benchmark pipeline")
 app.add_typer(ground_truth_app, name="ground-truth", help="Generate ground truth using Gemini")
 app.add_typer(wer_app, name="wer", help="Calculate semantic WER metrics")
 app.add_typer(report_app, name="report", help="Generate reports and compare services")

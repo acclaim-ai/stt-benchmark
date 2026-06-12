@@ -12,6 +12,7 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.audio.vad_processor import VADProcessor
+from pipecat.observers.base_observer import BaseObserver
 
 if TYPE_CHECKING:
     import aiohttp
@@ -133,6 +134,102 @@ class BenchmarkRunner:
                 error=str(e),
             )
 
+    async def debug_sample(
+        self,
+        sample: AudioSample,
+        service_name: ServiceName,
+        model: str | None = None,
+        *,
+        source_label: str | None = None,
+        audio_data: bytes | None = None,
+    ) -> BenchmarkResult:
+        """Run one sample through the benchmark pipeline with stderr debug tracing."""
+        from stt_benchmark.observers.debug_trace import DebugTraceObserver
+
+        if audio_data is None:
+            audio_path = Path(sample.audio_path)
+            if not audio_path.exists():
+                result = BenchmarkResult(
+                    sample_id=sample.sample_id,
+                    service_name=service_name,
+                    model_name=model,
+                    audio_duration_seconds=sample.duration_seconds,
+                    error=f"Audio file not found: {audio_path}",
+                )
+                debug_observer = DebugTraceObserver()
+                debug_observer.log_start(
+                    service=service_name.value,
+                    chunk_ms=self.chunk_ms,
+                    vad_stop_secs=self.vad_stop_secs,
+                    audio_bytes=0,
+                    duration_seconds=sample.duration_seconds,
+                    source_label=source_label or sample.sample_id,
+                )
+                debug_observer.log_done(
+                    transcription=None,
+                    ttfb_seconds=None,
+                    error=result.error,
+                )
+                return result
+            audio_data = audio_path.read_bytes()
+        debug_observer = DebugTraceObserver()
+        debug_observer.log_start(
+            service=service_name.value,
+            chunk_ms=self.chunk_ms,
+            vad_stop_secs=self.vad_stop_secs,
+            audio_bytes=len(audio_data),
+            duration_seconds=sample.duration_seconds,
+            source_label=source_label or sample.sample_id,
+        )
+
+        metrics_observer = MetricsCollectorObserver()
+        transcription_observer = TranscriptionCollectorObserver()
+        metrics_observer.set_current_sample(sample.sample_id)
+        transcription_observer.set_current_sample(sample.sample_id)
+
+        try:
+            definition = get_service_definition(service_name.value)
+            if definition.needs_aiohttp:
+                import aiohttp
+
+                async with aiohttp.ClientSession() as session:
+                    result = await self._run_pipeline(
+                        sample=sample,
+                        service_name=service_name,
+                        model=model,
+                        audio_data=audio_data,
+                        metrics_observer=metrics_observer,
+                        transcription_observer=transcription_observer,
+                        aiohttp_session=session,
+                        extra_observers=[debug_observer],
+                    )
+            else:
+                result = await self._run_pipeline(
+                    sample=sample,
+                    service_name=service_name,
+                    model=model,
+                    audio_data=audio_data,
+                    metrics_observer=metrics_observer,
+                    transcription_observer=transcription_observer,
+                    extra_observers=[debug_observer],
+                )
+        except Exception as e:
+            logger.error(f"[{service_name.value}] Debug run failed for {sample.sample_id}: {e}")
+            result = BenchmarkResult(
+                sample_id=sample.sample_id,
+                service_name=service_name,
+                model_name=model,
+                audio_duration_seconds=sample.duration_seconds,
+                error=str(e),
+            )
+
+        debug_observer.log_done(
+            transcription=result.transcription,
+            ttfb_seconds=result.ttfb_seconds,
+            error=result.error,
+        )
+        return result
+
     async def _run_pipeline(
         self,
         sample: AudioSample,
@@ -142,6 +239,7 @@ class BenchmarkRunner:
         metrics_observer: MetricsCollectorObserver,
         transcription_observer: TranscriptionCollectorObserver,
         aiohttp_session: "aiohttp.ClientSession | None" = None,
+        extra_observers: list[BaseObserver] | None = None,
     ) -> BenchmarkResult:
         """Run the benchmark pipeline for a single sample.
 
@@ -157,17 +255,27 @@ class BenchmarkRunner:
         Returns:
             BenchmarkResult with TTFB and transcription.
         """
+        from stt_benchmark.observers.debug_trace import DebugTraceObserver
+
         # Create STT service using its factory
         stt_service = create_stt_service(
             service_name,
             aiohttp_session=aiohttp_session,
             grpc_options=self.grpc_options,
         )
+        if extra_observers:
+            for observer in extra_observers:
+                if isinstance(observer, DebugTraceObserver) and hasattr(
+                    stt_service, "set_grpc_reply_trace"
+                ):
+                    stt_service.set_grpc_reply_trace(observer.log_grpc_reply)
+                    break
 
         # Create transport with audio
         # Pass transcription_received event so transport sends silence
         # until transcription arrives (or timeout), then continues for
         # post_transcription_delay to collect additional segments
+        stream_ready = getattr(stt_service, "stream_ready_event", None)
         transport = SyntheticInputTransport(
             audio_data=audio_data,
             sample_rate=self.sample_rate,
@@ -175,6 +283,7 @@ class BenchmarkRunner:
             transcription_received=transcription_observer._transcription_received,
             max_silence_timeout=self.max_silence_timeout_secs,
             post_transcription_delay=self.post_transcription_delay_secs,
+            stream_ready=stream_ready,
         )
 
         vad_processor = VADProcessor(
@@ -185,6 +294,13 @@ class BenchmarkRunner:
         pipeline = Pipeline([transport, vad_processor, stt_service])
 
         # Create task with observers
+        observers: list[BaseObserver] = [
+            metrics_observer,
+            transcription_observer,
+        ]
+        if extra_observers:
+            observers.extend(extra_observers)
+
         task = PipelineTask(
             pipeline,
             params=PipelineParams(
@@ -192,7 +308,7 @@ class BenchmarkRunner:
                 audio_in_channels=1,
                 enable_metrics=True,
             ),
-            observers=[metrics_observer, transcription_observer],
+            observers=observers,
         )
 
         # Run pipeline
