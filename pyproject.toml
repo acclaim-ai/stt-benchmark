@@ -45,6 +45,7 @@ dependencies = [
     # Interactive review (keyboard input)
     "readchar>=4.0.0",
     "adjusttext>=1.3.0",
+    "betterproto==2.0.0b6",
 ]
 
 [project.optional-dependencies]
